@@ -27,8 +27,9 @@ class ProgressionEngineTest {
     private val pullUp = ExerciseInput("pull_up", Equipment.BODYWEIGHT, 2.5, isCompound = true, weightKg = 0.0, reps = 8)
     private val rdl = ExerciseInput("rdl", Equipment.BARBELL, 2.5, isCompound = true, weightKg = 100.0, reps = 5)
     private val legExt = ExerciseInput("leg_ext", Equipment.MACHINE, 2.5, isCompound = false, weightKg = 40.0, reps = 10)
+    private val tbarRow = ExerciseInput("tbar_row", Equipment.MACHINE, 2.5, isCompound = true, weightKg = 60.0, reps = 10)
 
-    private val inputs = listOf(hack, latRaise, pullUp, rdl, legExt)
+    private val inputs = listOf(hack, latRaise, pullUp, rdl, legExt, tbarRow)
     private val templates = mapOf(
         WorkoutLetter.A to listOf(
             TemplateExercise("hack", 2),
@@ -39,6 +40,7 @@ class ProgressionEngineTest {
         WorkoutLetter.C to listOf(
             TemplateExercise("pull_up", 3),
             TemplateExercise("leg_ext", 1),
+            TemplateExercise("tbar_row", 2),
         ),
     )
 
@@ -112,6 +114,51 @@ class ProgressionEngineTest {
     fun `ladder zig-zags down when a new block starts`() {
         assertTrue(weightOf(7, "hack") < weightOf(4, "hack")) // 60 < 65
         assertTrue(weightOf(13, "hack") < weightOf(16, "hack"))
+        assertTrue(weightOf(9, "tbar_row") < weightOf(6, "tbar_row")) // 50 < 52.5
+    }
+
+    @Test
+    fun `workout B compounds climb the 80 and 95 percent rungs`() {
+        // RDL 100 kg x 5 -> 1RM 116.67, 15RM 77.78, 10RM 87.5, 5RM 100.
+        assertEquals(62.5, weightOf(2, "rdl"), 1e-9) // 80% x 77.78 = 62.22
+        assertEquals(75.0, weightOf(5, "rdl"), 1e-9) // 95% x 77.78 = 73.89
+        assertEquals(70.0, weightOf(8, "rdl"), 1e-9) // 80% x 87.5
+        assertEquals(82.5, weightOf(11, "rdl"), 1e-9) // 95% x 87.5 = 83.125
+        assertEquals(80.0, weightOf(14, "rdl"), 1e-9) // 80% x 100
+        assertEquals(95.0, weightOf(17, "rdl"), 1e-9) // 95% x 100
+    }
+
+    @Test
+    fun `workout C compounds climb the 85 and 100 percent rungs`() {
+        // T-bar row 60 kg x 10 -> 1RM 80, 15RM 53.33, 10RM 60, 5RM 68.57.
+        assertEquals(45.0, weightOf(3, "tbar_row"), 1e-9) // 85% x 53.33 = 45.33
+        assertEquals(52.5, weightOf(6, "tbar_row"), 1e-9) // 100% x 53.33
+        assertEquals(50.0, weightOf(9, "tbar_row"), 1e-9) // 85% x 60 = 51 -> 50
+        assertEquals(60.0, weightOf(12, "tbar_row"), 1e-9) // 100% x 60
+        assertEquals(57.5, weightOf(15, "tbar_row"), 1e-9) // 85% x 68.57 = 58.29
+        assertEquals(67.5, weightOf(18, "tbar_row"), 1e-9) // 100% x 68.57
+    }
+
+    @Test
+    fun `block 4 top ladder covers the 102 point 5 percent rung`() {
+        // Workout A rung (session 22): 91.43 x 1.025 = 93.71 -> 92.5 (rounds to the
+        // same weight as session 19's 100% rung).
+        assertEquals(92.5, weightOf(22, "hack"), 1e-9)
+        // Workout C rungs 1.025 / 1.05: 68.57 x 1.025 = 70.29 -> 70; x 1.05 = 72 -> 72.5.
+        assertEquals(70.0, weightOf(21, "tbar_row"), 1e-9)
+        assertEquals(72.5, weightOf(24, "tbar_row"), 1e-9)
+    }
+
+    @Test
+    fun `block 4 back-offs are 80 percent of the rounded top set`() {
+        val sets = exercise(21, "tbar_row").sets
+        assertEquals(2, sets.size)
+        assertEquals(SetKind.TOP, sets[0].kind)
+        assertEquals(70.0, sets[0].weightKg, 1e-9)
+        assertEquals(SetKind.BACK_OFF, sets[1].kind)
+        assertEquals(55.0, sets[1].weightKg, 1e-9) // 80% of 70 = 56 -> 55
+        assertEquals(10, sets[1].targetReps)
+        assertEquals(8, sets[1].minReps)
     }
 
     @Test
