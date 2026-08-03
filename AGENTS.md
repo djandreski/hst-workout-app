@@ -29,10 +29,10 @@ Personal Android app (not a library, no CI, no team conventions to preserve beyo
 
 ## Current implementation status
 
-- Fully implemented: **setup, home, workout**.
-- **Placeholders (compile but are stubs):** history, stats, settings screens. The backend logic they
-  need (history repository, backup/restore, reset-cycle) already exists in `data/` — don't re-implement it,
-  just wire the UI.
+- Fully implemented: **setup, home, workout, history, stats, settings** — all per the `DESIGN.md`
+  design system (brand red `#D32F2F`, custom amber `attention` token via `HstAttention` in
+  `ui/theme/Theme.kt`, set pips, docked rest-timer bar, plate-bar visualization, single-series
+  Canvas charts).
 
 ## Project-specific facts easy to miss
 
@@ -40,10 +40,10 @@ Personal Android app (not a library, no CI, no team conventions to preserve beyo
 - Package `com.djand.hst`, minSdk 26, metric units only.
 - `screens/` at repo root holds reference *screenshot images* (`.webp`) of other apps used for design
   comparison in `DESIGN.md` — not app assets, don't touch/reference them from code.
-- `DESIGN.md` is a **not-yet-implemented** design spec (colors, shapes, component specs) for a
-  StrongLifts-style redesign of `ui/theme` and the placeholder screens. Current `ui/theme/Theme.kt`
-  does not yet match it — check `DESIGN.md` before changing theme/tokens or building out
-  history/stats/settings UI, since it's the intended target, not just background reading.
+- `DESIGN.md` is the design spec (colors, shapes, component specs) the UI is built to — it is now
+  **implemented** (theme tokens, set pips, rest-timer bar, history/stats/settings). Keep UI changes
+  consistent with it; §12 lists the few deliberately-deferred open questions (dark `primary`
+  contrast double-check, "next up" in the rest bar, per-pip stepper sizing on narrow phones).
 - `PRD.md` / `PLAN.md` are the original spec/plan that produced this codebase; `README.md` reflects
   the *current* state and is the more reliable source when they disagree.
 - All progression weights round via `roundToIncrement` (round-half-up + epsilon guard) and block

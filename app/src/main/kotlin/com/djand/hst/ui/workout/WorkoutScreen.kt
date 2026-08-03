@@ -1,18 +1,34 @@
 package com.djand.hst.ui.workout
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,7 +56,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,11 +71,16 @@ import com.djand.hst.domain.model.SetKind
 import com.djand.hst.domain.progression.PlateCalculator
 import com.djand.hst.domain.progression.WarmupCalculator
 import com.djand.hst.ui.format.DisplayFormat
+import com.djand.hst.ui.theme.HstAttention
+import com.djand.hst.ui.theme.HstButtonShape
+import com.djand.hst.ui.theme.RestBarColor
+import kotlin.math.abs
+import kotlin.math.roundToLong
 
 /**
- * The workout screen — one exercise card at a time, big check buttons, a rest
- * timer after every set, and automatic advancement to the next exercise. This is
- * the StrongLifts-style core of the app.
+ * The workout screen — one exercise card at a time, one-tap set pips, a docked
+ * rest-timer bar after every set, and automatic advancement to the next exercise.
+ * This is the StrongLifts-style core of the app (DESIGN.md §10).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,6 +139,17 @@ fun WorkoutScreen(
                 },
             )
         },
+        // The rest timer is a persistent bottom bar, not a modal dialog: the
+        // exercise list stays scrollable while the countdown runs (DESIGN.md §10.3).
+        bottomBar = {
+            restTimer?.let { timer ->
+                RestTimerBar(
+                    timer = timer,
+                    onSkip = viewModel::stopRest,
+                    onRestart = viewModel::restartRest,
+                )
+            }
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         when {
@@ -137,7 +174,7 @@ fun WorkoutScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 items(
@@ -172,6 +209,7 @@ fun WorkoutScreen(
                     item(key = "finish") {
                         Button(
                             onClick = viewModel::finish,
+                            shape = HstButtonShape,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(72.dp),
@@ -182,14 +220,6 @@ fun WorkoutScreen(
                 }
             }
         }
-    }
-
-    restTimer?.let { timer ->
-        RestTimerDialog(
-            timer = timer,
-            onSkip = viewModel::stopRest,
-            onRestart = viewModel::restartRest,
-        )
     }
 
     warmupFor?.let { exercise ->
@@ -232,22 +262,41 @@ private fun ExerciseCard(
     onPlates: () -> Unit,
     onNotes: () -> Unit,
 ) {
+    // The correction stepper of one tapped "done" pip; progressive disclosure
+    // instead of always-visible steppers (DESIGN.md §10.2).
+    var adjustingSetId by rememberSaveable { mutableStateOf<Long?>(null) }
+
     Card(modifier = Modifier.fillMaxWidth()) {
-        if (!expanded) {
-            CollapsedExercise(exercise = exercise, onToggle = onToggle, onUnskip = onUnskip)
-        } else {
-            ExpandedExercise(
-                exercise = exercise,
-                onToggle = onToggle,
-                onCheckSet = onCheckSet,
-                onUncheckSet = onUncheckSet,
-                onAdjustReps = onAdjustReps,
-                onSkip = onSkip,
-                onUnskip = onUnskip,
-                onWarmup = onWarmup,
-                onPlates = onPlates,
-                onNotes = onNotes,
-            )
+        AnimatedContent(targetState = expanded, label = "exerciseExpand") { isExpanded ->
+            if (!isExpanded) {
+                CollapsedExercise(exercise = exercise, onToggle = onToggle, onUnskip = onUnskip)
+            } else {
+                ExpandedExercise(
+                    exercise = exercise,
+                    adjustingSet = exercise.sets.firstOrNull {
+                        it.id == adjustingSetId && it.status == SetStatus.DONE
+                    },
+                    onToggle = onToggle,
+                    onPipClick = { set ->
+                        when (set.status) {
+                            SetStatus.PENDING -> onCheckSet(set)
+                            SetStatus.DONE ->
+                                adjustingSetId = if (adjustingSetId == set.id) null else set.id
+                            SetStatus.SKIPPED -> Unit
+                        }
+                    },
+                    onUncheckSet = {
+                        adjustingSetId = null
+                        onUncheckSet(it)
+                    },
+                    onAdjustReps = onAdjustReps,
+                    onSkip = onSkip,
+                    onUnskip = onUnskip,
+                    onWarmup = onWarmup,
+                    onPlates = onPlates,
+                    onNotes = onNotes,
+                )
+            }
         }
     }
 }
@@ -265,32 +314,55 @@ private fun CollapsedExercise(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(exercise.name, style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (exercise.skipped) {
-                    "Skipped"
-                } else {
-                    val reps = exercise.sets.joinToString(", ") { (it.completedReps ?: 0).toString() }
-                    "${DisplayFormat.exerciseLoad(exercise.equipment, exercise.firstWeightKg)} × $reps"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            exercise.name,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
         if (exercise.skipped) {
+            Text(
+                "Skipped",
+                style = MaterialTheme.typography.labelLarge,
+                color = HstAttention.attention,
+            )
             TextButton(onClick = onUnskip) { Text("Undo") }
         } else {
-            Text("✓", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+            // Compact summary line: "{sets}×{reps} {weight}" (DESIGN.md §10.4).
+            Text(
+                collapsedSummary(exercise),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = "Expand",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp),
+        )
+    }
+}
+
+private fun collapsedSummary(exercise: WorkoutViewModel.ExerciseUi): String {
+    val load = DisplayFormat.exerciseLoad(exercise.equipment, exercise.firstWeightKg)
+    if (!exercise.resolved) {
+        return "${exercise.sets.size}×${exercise.targetReps} $load"
+    }
+    val allOnTarget = exercise.sets.all { (it.completedReps ?: it.targetReps) == it.targetReps }
+    return if (allOnTarget) {
+        "✓ ${exercise.sets.size}×${exercise.targetReps} $load"
+    } else {
+        val reps = exercise.sets.joinToString(", ") { (it.completedReps ?: 0).toString() }
+        "✓ $load × $reps"
     }
 }
 
 @Composable
 private fun ExpandedExercise(
     exercise: WorkoutViewModel.ExerciseUi,
+    adjustingSet: WorkoutViewModel.SetUi?,
     onToggle: () -> Unit,
-    onCheckSet: (WorkoutViewModel.SetUi) -> Unit,
+    onPipClick: (WorkoutViewModel.SetUi) -> Unit,
     onUncheckSet: (WorkoutViewModel.SetUi) -> Unit,
     onAdjustReps: (WorkoutViewModel.SetUi, Int) -> Unit,
     onSkip: () -> Unit,
@@ -300,32 +372,43 @@ private fun ExpandedExercise(
     onNotes: () -> Unit,
 ) {
     Column(modifier = Modifier.padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 exercise.name,
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = onToggle),
+                modifier = Modifier.weight(1f),
             )
             if (exercise.isPr) {
                 Surface(
                     color = MaterialTheme.colorScheme.primary,
-                    shape = MaterialTheme.shapes.small,
+                    shape = CircleShape,
                 ) {
                     Text(
                         "PR",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                     )
                 }
             }
+            Icon(
+                Icons.Filled.KeyboardArrowUp,
+                contentDescription = "Collapse",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp),
+            )
         }
 
+        // The big weight×reps hero lives only here, not in the collapsed header.
         Text(
             "${DisplayFormat.exerciseLoad(exercise.equipment, exercise.firstWeightKg)} × ${exercise.targetReps}",
             style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
         )
 
         exercise.previousSummary?.let {
@@ -357,15 +440,15 @@ private fun ExpandedExercise(
                 TextButton(onClick = onUnskip) { Text("Undo skip") }
             }
         } else {
-            exercise.sets.forEach { set ->
-                SetRow(
-                    exercise = exercise,
-                    set = set,
-                    onCheck = { onCheckSet(set) },
-                    onUncheck = { onUncheckSet(set) },
-                    onAdjust = { delta -> onAdjustReps(set, delta) },
-                )
+            SetPipRow(exercise = exercise, onPipClick = onPipClick)
+
+            adjustingSet?.let { set ->
                 Spacer(Modifier.height(8.dp))
+                SetCorrectionRow(
+                    set = set,
+                    onAdjust = { delta -> onAdjustReps(set, delta) },
+                    onUncheck = { onUncheckSet(set) },
+                )
             }
         }
 
@@ -386,99 +469,201 @@ private fun ExpandedExercise(
     }
 }
 
-@Composable
-private fun SetRow(
-    exercise: WorkoutViewModel.ExerciseUi,
-    set: WorkoutViewModel.SetUi,
-    onCheck: () -> Unit,
-    onUncheck: () -> Unit,
-    onAdjust: (Int) -> Unit,
-) {
-    val kindLabel = when (set.kind) {
-        SetKind.TOP -> " · Top set"
-        SetKind.BACK_OFF -> " · Back-off"
-        SetKind.NORMAL -> ""
-    }
-    when (set.status) {
-        SetStatus.DONE -> Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Set ${set.setIndex + 1}$kindLabel",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            val reps = set.completedReps ?: set.targetReps
-            val missed = reps < set.minReps
-            OutlinedButton(onClick = { onAdjust(-1) }) { Text("−") }
-            Text(
-                "$reps",
-                style = MaterialTheme.typography.headlineSmall,
-                color = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-            OutlinedButton(onClick = { onAdjust(1) }) { Text("+") }
-            TextButton(onClick = onUncheck) { Text("Undo") }
-        }
+// -------------------------------------------------------------------- set pips
 
-        else -> Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Set ${set.setIndex + 1}$kindLabel", style = MaterialTheme.typography.titleMedium)
+/**
+ * One pip per prescribed set (DESIGN.md §10.2): tap a grey pip to mark it done at
+ * the target reps; tap a filled pip to reveal the inline correction stepper.
+ */
+@Composable
+private fun SetPipRow(
+    exercise: WorkoutViewModel.ExerciseUi,
+    onPipClick: (WorkoutViewModel.SetUi) -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        exercise.sets.forEach { set ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    "${DisplayFormat.exerciseLoad(exercise.equipment, set.weightKg)} × ${set.targetReps}",
-                    style = MaterialTheme.typography.headlineSmall,
+                    setLabel(set),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.height(4.dp))
+                SetPip(set = set, onClick = { onPipClick(set) })
+                // Back-off sets differ in weight from the top set; show it under the pip.
+                if (set.weightKg != exercise.firstWeightKg) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        DisplayFormat.weight(set.weightKg),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            Button(
-                onClick = onCheck,
-                modifier = Modifier.height(64.dp),
+        }
+    }
+}
+
+private fun setLabel(set: WorkoutViewModel.SetUi): String = when (set.kind) {
+    SetKind.TOP -> "Top set"
+    SetKind.BACK_OFF -> "Back-off"
+    SetKind.NORMAL -> "Set ${set.setIndex + 1}"
+}
+
+@Composable
+private fun SetPip(
+    set: WorkoutViewModel.SetUi,
+    onClick: () -> Unit,
+) {
+    val done = set.status == SetStatus.DONE
+    val reps = set.completedReps ?: set.targetReps
+    val missed = done && reps < set.minReps
+
+    val fill = if (done && !missed) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val content = when {
+        done && !missed -> MaterialTheme.colorScheme.onPrimary
+        missed -> HstAttention.attention
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .then(if (missed) Modifier.border(2.dp, HstAttention.attention, CircleShape) else Modifier)
+            .clip(CircleShape)
+            .background(fill)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "$reps",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = if (done) FontWeight.Bold else FontWeight.Normal,
+            color = content,
+        )
+    }
+}
+
+/** The inline correction UI revealed by tapping a done pip: −/+ actual reps, or Undo. */
+@Composable
+private fun SetCorrectionRow(
+    set: WorkoutViewModel.SetUi,
+    onAdjust: (Int) -> Unit,
+    onUncheck: () -> Unit,
+) {
+    val reps = set.completedReps ?: set.targetReps
+    val missed = reps < set.minReps
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            setLabel(set),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(
+            onClick = { onAdjust(-1) },
+            modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+            contentPadding = PaddingValues(0.dp),
+        ) { Text("−") }
+        Text(
+            "$reps",
+            style = MaterialTheme.typography.headlineSmall,
+            color = if (missed) HstAttention.attention else MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+        OutlinedButton(
+            onClick = { onAdjust(1) },
+            modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+            contentPadding = PaddingValues(0.dp),
+        ) { Text("+") }
+        TextButton(onClick = onUncheck) { Text("Undo") }
+    }
+}
+
+// ------------------------------------------------------------------ rest timer
+
+private val RestBarMuted = Color.White.copy(alpha = 0.65f)
+
+/**
+ * The docked rest-timer bar (DESIGN.md §10.3): near-black chrome, big tabular
+ * countdown, "restart" as a small text link, skip on the right, primary progress
+ * line underneath. Non-modal — the list above keeps scrolling.
+ */
+@Composable
+private fun RestTimerBar(
+    timer: WorkoutViewModel.RestTimerUi,
+    onSkip: () -> Unit,
+    onRestart: () -> Unit,
+) {
+    Surface(
+        color = RestBarColor,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        shadowElevation = 3.dp,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 8.dp, top = 16.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Done", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "${timer.remainingSeconds}",
+                    style = MaterialTheme.typography.displayMedium.copy(fontFeatureSettings = "tnum"),
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text(
+                        "Rest ${timer.totalSeconds}s",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = RestBarMuted,
+                    )
+                    Text(
+                        "Restart",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White,
+                        modifier = Modifier
+                            .clickable(role = Role.Button, onClick = onRestart)
+                            .padding(vertical = 4.dp),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onSkip, modifier = Modifier.size(56.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Skip rest",
+                        tint = Color.White,
+                    )
+                }
             }
+            LinearProgressIndicator(
+                progress = {
+                    if (timer.totalSeconds == 0) 0f
+                    else timer.remainingSeconds.toFloat() / timer.totalSeconds
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.White.copy(alpha = 0.15f),
+            )
         }
     }
 }
 
 // ---------------------------------------------------------------------- dialogs
-
-@Composable
-private fun RestTimerDialog(
-    timer: WorkoutViewModel.RestTimerUi,
-    onSkip: () -> Unit,
-    onRestart: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onSkip,
-        title = { Text("Rest") },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    "${timer.remainingSeconds}",
-                    style = MaterialTheme.typography.displayLarge,
-                )
-                Text("seconds", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(12.dp))
-                LinearProgressIndicator(
-                    progress = {
-                        if (timer.totalSeconds == 0) 0f
-                        else timer.remainingSeconds.toFloat() / timer.totalSeconds
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = { TextButton(onClick = onSkip) { Text("Skip") } },
-        dismissButton = { TextButton(onClick = onRestart) { Text("Restart") } },
-    )
-}
 
 @Composable
 private fun WarmupDialog(
@@ -531,9 +716,12 @@ private fun PlatesDialog(
                 if (load.perSide.isEmpty()) {
                     Text("Empty bar (${DisplayFormat.weight(barWeightKg)})")
                 } else {
+                    PlateLoadBar(load.perSide)
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "Per side: " + load.perSide.joinToString(" + ") { DisplayFormat.weight(it) },
-                        style = MaterialTheme.typography.titleMedium,
+                        "Per side: " + load.perSide.joinToString(" + ") { trimmedKg(it) },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (load.remainderKg > 0) {
@@ -550,6 +738,70 @@ private fun PlatesDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
     )
 }
+
+/**
+ * The plate-calculator visualization (DESIGN.md §10.6): a horizontal stack of
+ * colored plate blocks, height and width scaled by denomination, standard kg
+ * plate colors. One side of the bar is shown.
+ */
+@Composable
+private fun PlateLoadBar(perSide: List<Double>) {
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(top = 8.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        perSide.forEach { plate ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .width(plateWidth(plate))
+                        .height(plateHeight(plate))
+                        .then(
+                            if (plate == 5.0) {
+                                Modifier.border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline,
+                                    RoundedCornerShape(2.dp),
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(plateColor(plate)),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    trimmedKg(plate),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** Standard kg plate colors (red 25, blue 20, yellow 15, green 10, white 5). */
+private fun plateColor(plate: Double): Color = when (plate) {
+    25.0 -> Color(0xFFD32F2F)
+    20.0 -> Color(0xFF1565C0)
+    15.0 -> Color(0xFFF9A825)
+    10.0 -> Color(0xFF2E7D32)
+    5.0 -> Color(0xFFF5F5F5)
+    2.5 -> Color(0xFF9E9E9E)
+    1.25 -> Color(0xFF616161)
+    else -> Color(0xFFBDBDBD)
+}
+
+private fun plateHeight(plate: Double): Dp = (18 + plate * 1.8).dp
+
+private fun plateWidth(plate: Double): Dp = (10 + plate * 0.8).dp
+
+private fun trimmedKg(value: Double): String =
+    if (abs(value - value.roundToLong()) < 1e-9) value.roundToLong().toString() else value.toString()
 
 @Composable
 private fun NotesDialog(

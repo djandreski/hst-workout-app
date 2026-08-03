@@ -45,6 +45,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.djand.hst.domain.progression.ProgressionEngine
 import com.djand.hst.ui.format.DisplayFormat
+import com.djand.hst.ui.theme.HstAttention
+import com.djand.hst.ui.theme.HstButtonShape
 
 /**
  * Home: today's workout with a big Start button, cycle progress, banners
@@ -255,6 +257,7 @@ private fun TodayCard(upcoming: HomeViewModel.UpcomingUi, onStart: () -> Unit) {
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = onStart,
+                shape = HstButtonShape,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(72.dp),
@@ -288,6 +291,7 @@ private fun CycleFinishedCard(busy: Boolean, onStartNextCycle: () -> Unit) {
             Button(
                 onClick = onStartNextCycle,
                 enabled = !busy,
+                shape = HstButtonShape,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(72.dp),
@@ -303,9 +307,10 @@ private fun CycleFinishedCard(busy: Boolean, onStartNextCycle: () -> Unit) {
 
 @Composable
 private fun BannerCard(title: String, body: String) {
+    // Notices, not primary actions: the accent is amber "attention" (DESIGN.md §10.10).
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text(title, style = MaterialTheme.typography.titleMedium, color = HstAttention.attention)
             Text(body, style = MaterialTheme.typography.bodyMedium)
         }
     }

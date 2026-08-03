@@ -47,18 +47,20 @@ com.djand.hst
     ├── HstApp.kt / RootViewModel  shows SetupScreen until setup-complete flag, else NavHost
     ├── navigation/HstNavHost.kt   flat routes: home, workout/{sessionId}, history, stats, settings
     ├── setup/                     first-launch wizard: weight × reps per exercise → cycle 1
-    ├── home/                      today's workout + big Start, week/progress, deload banner
-    ├── workout/                   one exercise card at a time, set checkboxes, rest timer,
-    │                              warm-up & plate dialogs, auto-advance
-    ├── history/                   (placeholder) sessions → expandable set details
-    ├── stats/                     (placeholder) hand-rolled Canvas charts, no chart library
-    ├── settings/                  (placeholder) rest timer, increments, dark mode, backup, reset
-    └── theme/
+    ├── home/                      today's workout + big Start, week/progress, banners
+    ├── workout/                   one exercise card at a time, one-tap set pips, docked
+    │                              rest-timer bar, warm-up & plate dialogs, auto-advance
+    ├── history/                   sessions, newest first → expandable per-set details
+    ├── stats/                     one metric at a time (dropdown), hand-rolled Canvas
+    │                              line charts, no chart library
+    ├── settings/                  rest timer, increments, dark mode, backup, reset
+    └── theme/                     DESIGN.md tokens: one brand red, custom amber
+                                   "attention" color via CompositionLocal
 ```
 
-> **Current UI state:** setup, home and workout are fully implemented; history, stats and
-> settings are compiling placeholders. The backup and reset-cycle logic below is already
-> implemented in the data layer, awaiting its Settings screen wiring.
+> **Current UI state:** all screens are implemented per the `DESIGN.md` design system
+> (StrongLifts-style: one accent color, set pips, docked rest-timer bar, flat
+> navigation with no bottom nav/FAB).
 
 **Data flow:** Room/DataStore → repositories → ViewModel `StateFlow<UiState>` → Composables.
 User events flow back down; the engine is invoked by repositories/ViewModels and never
@@ -210,5 +212,5 @@ export/import via the Storage Access Framework (the caller passes a document `Ur
   sessions, set logs and progression state, and marks setup incomplete so the wizard runs
   again. The exercise/template catalogue is untouched.
 
-These operations currently live in the data layer; the Settings screen that will expose
-them is one of the remaining UI placeholders.
+These operations are exposed on the Settings screen (export/import via the Storage Access
+Framework, reset behind a confirmation dialog).
