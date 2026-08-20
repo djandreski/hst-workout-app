@@ -69,6 +69,7 @@ import com.djand.hst.data.local.entity.SetStatus
 import com.djand.hst.domain.model.Equipment
 import com.djand.hst.domain.model.SetKind
 import com.djand.hst.domain.progression.PlateCalculator
+import com.djand.hst.domain.progression.ProgressionEngine
 import com.djand.hst.domain.progression.WarmupCalculator
 import com.djand.hst.ui.format.DisplayFormat
 import com.djand.hst.ui.theme.HstAttention
@@ -125,8 +126,8 @@ fun WorkoutScreen(
                     Column {
                         Text("Workout ${state.workout}")
                         Text(
-                            "Week ${state.week} · Session ${state.sessionNumber}" +
-                                if (state.isDeload) " · Deload" else "",
+                            "Session ${state.sessionNumber} · " +
+                                if (state.phase in 1..4) ProgressionEngine.phaseName(state.phase) else "",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -508,8 +509,7 @@ private fun SetPipRow(
 }
 
 private fun setLabel(set: WorkoutViewModel.SetUi): String = when (set.kind) {
-    SetKind.TOP -> "Top set"
-    SetKind.BACK_OFF -> "Back-off"
+    SetKind.NEGATIVE -> "Neg"
     SetKind.NORMAL -> "Set ${set.setIndex + 1}"
 }
 

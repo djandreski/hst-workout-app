@@ -34,6 +34,7 @@ object DatabaseModule {
         seedCallback: SeedDatabaseCallback,
     ): HstDatabase =
         Room.databaseBuilder(context, HstDatabase::class.java, HstDatabase.NAME)
+            .addMigrations(HstDatabase.MIGRATION_1_2)
             .addCallback(seedCallback)
             .build()
 

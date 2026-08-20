@@ -43,16 +43,16 @@ class HomeViewModel @Inject constructor(
     data class UpcomingUi(
         val sessionId: Long,
         val workout: WorkoutLetter,
-        val week: Int,
+        val phase: Int,
         val sessionNumber: Int,
-        val isDeload: Boolean,
         val inProgress: Boolean,
     )
 
     /** The "Last workout" line. */
     data class LastWorkoutUi(
         val workout: WorkoutLetter,
-        val week: Int,
+        val phase: Int,
+        val sessionNumber: Int,
         val date: String,
         val duration: String?,
     )
@@ -94,9 +94,8 @@ class HomeViewModel @Inject constructor(
                 UpcomingUi(
                     sessionId = it.session.id,
                     workout = it.session.workoutLetter,
-                    week = it.session.week,
+                    phase = it.session.phase,
                     sessionNumber = it.session.sessionNumber,
-                    isDeload = it.session.isDeload,
                     inProgress = it.session.status == SessionStatus.IN_PROGRESS,
                 )
             },
@@ -104,7 +103,8 @@ class HomeViewModel @Inject constructor(
             lastWorkout = last?.let {
                 LastWorkoutUi(
                     workout = it.session.workoutLetter,
-                    week = it.session.week,
+                    phase = it.session.phase,
+                    sessionNumber = it.session.sessionNumber,
                     date = it.session.completedAtEpochMs?.let(DisplayFormat::shortDate).orEmpty(),
                     duration = DisplayFormat.durationMinutes(
                         it.session.startedAtEpochMs,

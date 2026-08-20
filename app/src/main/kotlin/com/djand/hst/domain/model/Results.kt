@@ -11,19 +11,13 @@ data class ExerciseResult(
     val skipped: Boolean = false,
 )
 
-/** How the engine reacted to an [ExerciseResult]. */
+/** How the engine classified a finished exercise result. */
 enum class ProgressionEvent {
     /** Every set reached at least its minimum reps. */
     ACHIEVED,
 
-    /** Isolation: every set reached the top of the rep range -> remaining sessions +1 increment. */
-    BUMP_SCHEDULED,
-
-    /** First miss -> the next occurrence repeats the same weight. */
-    REPEAT_SCHEDULED,
-
-    /** Second consecutive miss -> working weight -10%, remaining progression regenerated. */
-    RESET,
+    /** Not all sets reached minimum reps. */
+    MISSED,
 
     /** Exercise was skipped; no progression impact. */
     SKIPPED,
@@ -33,11 +27,10 @@ enum class ProgressionEvent {
 data class ProgressionOutcome(
     val exerciseId: String,
     val event: ProgressionEvent,
-    /** New value of the consecutive-miss counter to persist for this exercise. */
-    val consecutiveMisses: Int,
+    val consecutiveMisses: Int = 0,
 )
 
-/** Result of evaluating one finished session: the updated plan plus per-exercise outcomes. */
+/** Result of evaluating one finished session: per-exercise outcomes. */
 data class SessionEvaluation(
     val plan: CyclePlan,
     val outcomes: List<ProgressionOutcome>,

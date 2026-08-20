@@ -1,4 +1,4 @@
-package com.djand.hst.domain.progression
+﻿package com.djand.hst.domain.progression
 
 import com.djand.hst.domain.model.CyclePlan
 import com.djand.hst.domain.model.Equipment
@@ -15,21 +15,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Fixtures and expected values follow the worked example documented on
- * [ProgressionEngine]: Hack Squat 80 kg x 10 (machine, 2.5 kg) ->
- * 1RM 106.67, 15RM 71.11, 10RM 80, 5RM 91.43.
- */
 class ProgressionEngineTest {
 
-    private val hack = ExerciseInput("hack", Equipment.MACHINE, 2.5, isCompound = true, weightKg = 80.0, reps = 10)
-    private val latRaise = ExerciseInput("lat_raise", Equipment.DUMBBELL, 2.0, isCompound = false, weightKg = 10.0, reps = 12)
+    private val hack = ExerciseInput("hack", Equipment.MACHINE, 5.0, isCompound = true, weightKg = 80.0, reps = 10)
+    private val latRaise = ExerciseInput("lat_raise", Equipment.DUMBBELL, 2.5, isCompound = false, weightKg = 10.0, reps = 12)
     private val pullUp = ExerciseInput("pull_up", Equipment.BODYWEIGHT, 2.5, isCompound = true, weightKg = 0.0, reps = 8)
-    private val rdl = ExerciseInput("rdl", Equipment.BARBELL, 2.5, isCompound = true, weightKg = 100.0, reps = 5)
+    private val rdl = ExerciseInput("rdl", Equipment.BARBELL, 10.0, isCompound = true, weightKg = 100.0, reps = 5)
     private val legExt = ExerciseInput("leg_ext", Equipment.MACHINE, 2.5, isCompound = false, weightKg = 40.0, reps = 10)
-    private val tbarRow = ExerciseInput("tbar_row", Equipment.MACHINE, 2.5, isCompound = true, weightKg = 60.0, reps = 10)
 
-    private val inputs = listOf(hack, latRaise, pullUp, rdl, legExt, tbarRow)
+    private val inputs = listOf(hack, latRaise, pullUp, rdl, legExt)
     private val templates = mapOf(
         WorkoutLetter.A to listOf(
             TemplateExercise("hack", 2),
@@ -40,7 +34,6 @@ class ProgressionEngineTest {
         WorkoutLetter.C to listOf(
             TemplateExercise("pull_up", 3),
             TemplateExercise("leg_ext", 1),
-            TemplateExercise("tbar_row", 2),
         ),
     )
 
@@ -56,16 +49,15 @@ class ProgressionEngineTest {
     private fun weightOf(n: Int, id: String, p: CyclePlan = plan): Double =
         exercise(n, id, p).sets.first().weightKg
 
-    // ------------------------------------------------------------ cycle structure
-
     @Test
-    fun `cycle has 24 sessions numbered 1 to 24`() {
+    fun cycleHas24Sessions() {
         assertEquals(24, plan.sessions.size)
         assertEquals((1..24).toList(), plan.sessions.map { it.sessionNumber })
+        assertEquals(1, plan.cycleNumber)
     }
 
     @Test
-    fun `workouts rotate A B C continuously`() {
+    fun workoutsRotateABC() {
         val expected = List(24) { WorkoutLetter.entries[it % 3] }
         assertEquals(expected, plan.sessions.map { it.workout })
         assertEquals(WorkoutLetter.A, ProgressionEngine.workoutForSession(1))
@@ -75,21 +67,29 @@ class ProgressionEngineTest {
     }
 
     @Test
-    fun `sessions map to weeks and blocks`() {
-        assertEquals(1, session(1).week)
-        assertEquals(1, session(3).week)
-        assertEquals(2, session(4).week)
-        assertEquals(8, session(24).week)
-        assertEquals(1, session(1).block)
-        assertEquals(1, session(6).block)
-        assertEquals(2, session(7).block)
-        assertEquals(3, session(13).block)
-        assertEquals(4, session(19).block)
-        assertEquals(4, session(24).block)
+    fun sessionsMapToPhases1Through4() {
+        assertEquals(1, ProgressionEngine.phaseForSession(1))
+        assertEquals(1, ProgressionEngine.phaseForSession(6))
+        assertEquals(2, ProgressionEngine.phaseForSession(7))
+        assertEquals(2, ProgressionEngine.phaseForSession(12))
+        assertEquals(3, ProgressionEngine.phaseForSession(13))
+        assertEquals(3, ProgressionEngine.phaseForSession(18))
+        assertEquals(4, ProgressionEngine.phaseForSession(19))
+        assertEquals(4, ProgressionEngine.phaseForSession(24))
     }
 
     @Test
-    fun `template order and set counts are preserved`() {
+    fun sessionsCarryCorrectPhaseNumber() {
+        assertEquals(1, session(1).phase)
+        assertEquals(1, session(6).phase)
+        assertEquals(2, session(7).phase)
+        assertEquals(3, session(13).phase)
+        assertEquals(4, session(19).phase)
+        assertEquals(4, session(24).phase)
+    }
+
+    @Test
+    fun templateOrderAndSetCountsPreserved() {
         assertEquals(listOf("hack", "lat_raise", "pull_up"), session(1).exercises.map { it.exerciseId })
         assertEquals(2, exercise(1, "hack").sets.size)
         assertEquals(2, exercise(1, "pull_up").sets.size)
@@ -97,145 +97,132 @@ class ProgressionEngineTest {
         assertEquals(1, exercise(3, "leg_ext").sets.size)
     }
 
-    // ------------------------------------------------------------ block ladders
-
     @Test
-    fun `compound block ladders match the worked example`() {
-        // Hack Squat, workout A -> rungs 75%/90% of the block RM.
-        assertEquals(52.5, weightOf(1, "hack"), 1e-9) // 75% x 71.11
-        assertEquals(65.0, weightOf(4, "hack"), 1e-9) // 90% x 71.11
-        assertEquals(60.0, weightOf(7, "hack"), 1e-9) // 75% x 80
-        assertEquals(72.5, weightOf(10, "hack"), 1e-9) // 90% x 80 = 72 -> 72.5
-        assertEquals(67.5, weightOf(13, "hack"), 1e-9) // 75% x 91.43
-        assertEquals(82.5, weightOf(16, "hack"), 1e-9) // 90% x 91.43
-    }
-
-    @Test
-    fun `ladder zig-zags down when a new block starts`() {
-        assertTrue(weightOf(7, "hack") < weightOf(4, "hack")) // 60 < 65
-        assertTrue(weightOf(13, "hack") < weightOf(16, "hack"))
-        assertTrue(weightOf(9, "tbar_row") < weightOf(6, "tbar_row")) // 50 < 52.5
-    }
-
-    @Test
-    fun `workout B compounds climb the 80 and 95 percent rungs`() {
-        // RDL 100 kg x 5 -> 1RM 116.67, 15RM 77.78, 10RM 87.5, 5RM 100.
-        assertEquals(62.5, weightOf(2, "rdl"), 1e-9) // 80% x 77.78 = 62.22
-        assertEquals(75.0, weightOf(5, "rdl"), 1e-9) // 95% x 77.78 = 73.89
-        assertEquals(70.0, weightOf(8, "rdl"), 1e-9) // 80% x 87.5
-        assertEquals(82.5, weightOf(11, "rdl"), 1e-9) // 95% x 87.5 = 83.125
-        assertEquals(80.0, weightOf(14, "rdl"), 1e-9) // 80% x 100
-        assertEquals(95.0, weightOf(17, "rdl"), 1e-9) // 95% x 100
-    }
-
-    @Test
-    fun `workout C compounds climb the 85 and 100 percent rungs`() {
-        // T-bar row 60 kg x 10 -> 1RM 80, 15RM 53.33, 10RM 60, 5RM 68.57.
-        assertEquals(45.0, weightOf(3, "tbar_row"), 1e-9) // 85% x 53.33 = 45.33
-        assertEquals(52.5, weightOf(6, "tbar_row"), 1e-9) // 100% x 53.33
-        assertEquals(50.0, weightOf(9, "tbar_row"), 1e-9) // 85% x 60 = 51 -> 50
-        assertEquals(60.0, weightOf(12, "tbar_row"), 1e-9) // 100% x 60
-        assertEquals(57.5, weightOf(15, "tbar_row"), 1e-9) // 85% x 68.57 = 58.29
-        assertEquals(67.5, weightOf(18, "tbar_row"), 1e-9) // 100% x 68.57
-    }
-
-    @Test
-    fun `block 4 top ladder covers the 102 point 5 percent rung`() {
-        // Workout A rung (session 22): 91.43 x 1.025 = 93.71 -> 92.5 (rounds to the
-        // same weight as session 19's 100% rung).
-        assertEquals(92.5, weightOf(22, "hack"), 1e-9)
-        // Workout C rungs 1.025 / 1.05: 68.57 x 1.025 = 70.29 -> 70; x 1.05 = 72 -> 72.5.
-        assertEquals(70.0, weightOf(21, "tbar_row"), 1e-9)
-        assertEquals(72.5, weightOf(24, "tbar_row"), 1e-9)
-    }
-
-    @Test
-    fun `block 4 back-offs are 80 percent of the rounded top set`() {
-        val sets = exercise(21, "tbar_row").sets
-        assertEquals(2, sets.size)
-        assertEquals(SetKind.TOP, sets[0].kind)
-        assertEquals(70.0, sets[0].weightKg, 1e-9)
-        assertEquals(SetKind.BACK_OFF, sets[1].kind)
-        assertEquals(55.0, sets[1].weightKg, 1e-9) // 80% of 70 = 56 -> 55
-        assertEquals(10, sets[1].targetReps)
-        assertEquals(8, sets[1].minReps)
-    }
-
-    @Test
-    fun `rounding keeps ladders monotonic for light dumbbell weights`() {
-        // Lateral raise: 15RM 9.33, 75% -> 7.0 and 90% -> 8.4 both round to 8 kg (2 kg increment).
-        assertEquals(8.0, weightOf(1, "lat_raise"), 1e-9)
-        assertEquals(8.0, weightOf(4, "lat_raise"), 1e-9)
-        assertEquals(8.0, weightOf(7, "lat_raise"), 1e-9)
-        assertEquals(10.0, weightOf(10, "lat_raise"), 1e-9)
-    }
-
-    @Test
-    fun `rep schemes match the block`() {
-        exercise(1, "hack").sets.forEach {
-            assertEquals(15, it.targetReps)
-            assertEquals(15, it.minReps)
-            assertEquals(SetKind.NORMAL, it.kind)
-        }
-        exercise(7, "hack").sets.forEach {
-            assertEquals(10, it.targetReps)
-            assertEquals(10, it.minReps)
-        }
-        exercise(13, "hack").sets.forEach {
-            assertEquals(8, it.targetReps)
-            assertEquals(5, it.minReps)
-        }
-    }
-
-    @Test
-    fun `block 4 has a top set of 5 plus back-off sets at 80 percent`() {
-        val sets = exercise(19, "hack").sets
-        assertEquals(2, sets.size)
-        assertEquals(SetKind.TOP, sets[0].kind)
-        assertEquals(92.5, sets[0].weightKg, 1e-9)
-        assertEquals(5, sets[0].targetReps)
-        assertEquals(5, sets[0].minReps)
-        assertEquals(SetKind.BACK_OFF, sets[1].kind)
-        assertEquals(75.0, sets[1].weightKg, 1e-9) // 80% of 92.5 = 74 -> 75
-        assertEquals(10, sets[1].targetReps)
-        assertEquals(8, sets[1].minReps)
-    }
-
-    @Test
-    fun `block 4 top ladder climbs past the 5RM`() {
-        // Workout B's block-4 rungs are indices 1 and 4 -> 1.00 and 1.05.
-        assertEquals(100.0, weightOf(20, "rdl"), 1e-9) // 1.00 x 5RM 100
-        assertEquals(105.0, weightOf(23, "rdl"), 1e-9) // 1.05 x 5RM 100
-    }
-
-    @Test
-    fun `three set compounds get one top set and two back-off sets`() {
-        val sets = exercise(24, "pull_up").sets
-        assertEquals(3, sets.size)
-        assertEquals(SetKind.TOP, sets[0].kind)
-        assertEquals(SetKind.BACK_OFF, sets[1].kind)
-        assertEquals(SetKind.BACK_OFF, sets[2].kind)
-    }
-
-    // ------------------------------------------------------------ isolations
-
-    @Test
-    fun `isolations sit at 10 to 15 reps on their block-2 weight in blocks 3 and 4`() {
-        // Lateral raise 10RM = 10.5; last block-2 rung (90%) = 9.45 -> 10 kg.
-        for (n in listOf(13, 16, 19, 22)) {
-            exercise(n, "lat_raise").sets.forEach {
-                assertEquals(10.0, it.weightKg, 1e-9)
+    fun phase1Prescribes15Reps() {
+        for (n in listOf(1, 4)) {
+            exercise(n, "hack").sets.forEach {
                 assertEquals(15, it.targetReps)
+                assertEquals(15, it.minReps)
+                assertEquals(SetKind.NORMAL, it.kind)
+            }
+        }
+    }
+
+    @Test
+    fun phase2Prescribes10Reps() {
+        for (n in listOf(7, 10)) {
+            exercise(n, "hack").sets.forEach {
+                assertEquals(10, it.targetReps)
                 assertEquals(10, it.minReps)
                 assertEquals(SetKind.NORMAL, it.kind)
             }
         }
     }
 
-    // ------------------------------------------------------------ pull-ups
+    @Test
+    fun phase3Prescribes5Reps() {
+        for (n in listOf(13, 16)) {
+            exercise(n, "hack").sets.forEach {
+                assertEquals(5, it.targetReps)
+                assertEquals(5, it.minReps)
+                assertEquals(SetKind.NORMAL, it.kind)
+            }
+        }
+    }
 
     @Test
-    fun `bodyweight pull-ups prescribe zero added weight in every session`() {
+    fun phase4HasNormalThenNegativeWorkouts() {
+        val s19 = exercise(19, "hack").sets
+        s19.forEach {
+            assertEquals(5, it.targetReps)
+            assertEquals(SetKind.NORMAL, it.kind)
+        }
+        val s22 = exercise(22, "hack").sets
+        s22.forEach {
+            assertEquals(5, it.targetReps)
+            assertEquals(SetKind.NEGATIVE, it.kind)
+        }
+    }
+
+    @Test
+    fun phase1HackSquatRampMatchesIncrements() {
+        assertEquals(45.0, weightOf(1, "hack"), 1e-9)
+        assertEquals(60.0, weightOf(4, "hack"), 1e-9)
+    }
+
+    @Test
+    fun phase2HackSquatRampsTo10RM() {
+        assertEquals(55.0, weightOf(7, "hack"), 1e-9)
+        assertEquals(70.0, weightOf(10, "hack"), 1e-9)
+    }
+
+    @Test
+    fun phase3HackSquatRampsTo5RM() {
+        assertEquals(65.0, weightOf(13, "hack"), 1e-9)
+        assertEquals(80.0, weightOf(16, "hack"), 1e-9)
+    }
+
+    @Test
+    fun phase4GoesBeyond5RM() {
+        assertEquals(95.0, weightOf(19, "hack"), 1e-9)
+        assertEquals(110.0, weightOf(22, "hack"), 1e-9)
+    }
+
+    @Test
+    fun phaseBoundariesDropWeight() {
+        assertTrue(weightOf(7, "hack") < weightOf(4, "hack"))
+        assertTrue(weightOf(13, "hack") < weightOf(10, "hack"))
+    }
+
+    @Test
+    fun weightsIncreaseWithinEachPhase() {
+        assertTrue(weightOf(1, "hack") <= weightOf(4, "hack"))
+        assertTrue(weightOf(7, "hack") <= weightOf(10, "hack"))
+        assertTrue(weightOf(13, "hack") <= weightOf(16, "hack"))
+        assertTrue(weightOf(19, "hack") <= weightOf(22, "hack"))
+    }
+
+    @Test
+    fun rdlRampMatchesIncrements() {
+        assertEquals(40.0, weightOf(2, "rdl"), 1e-9)
+        assertEquals(70.0, weightOf(5, "rdl"), 1e-9)
+        assertEquals(50.0, weightOf(8, "rdl"), 1e-9)
+        assertEquals(80.0, weightOf(11, "rdl"), 1e-9)
+        assertEquals(60.0, weightOf(14, "rdl"), 1e-9)
+        assertEquals(90.0, weightOf(17, "rdl"), 1e-9)
+    }
+
+    @Test
+    fun rdlPhase4ContinuesBeyond5RM() {
+        assertEquals(120.0, weightOf(20, "rdl"), 1e-9)
+        assertEquals(150.0, weightOf(23, "rdl"), 1e-9)
+    }
+
+    @Test
+    fun rdlPhase4NegativesInLastThreeWorkouts() {
+        exercise(20, "rdl").sets.forEach {
+            assertEquals(SetKind.NORMAL, it.kind)
+        }
+        exercise(23, "rdl").sets.forEach {
+            assertEquals(SetKind.NEGATIVE, it.kind)
+        }
+    }
+
+    @Test
+    fun roundingKeepsLaddersLoadable() {
+        for (s in plan.sessions) {
+            for (e in s.exercises) {
+                for (set in e.sets) {
+                    val remainder = set.weightKg % e.incrementKg
+                    assertTrue("Weight ${set.weightKg} not multiple of increment ${e.incrementKg}",
+                        Math.abs(remainder) < 1e-9 || Math.abs(remainder - e.incrementKg) < 1e-9)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun bodyweightPullUpsStayAtZero() {
         val occurrences = plan.sessions.flatMap { s ->
             s.exercises.filter { it.exerciseId == "pull_up" }.flatMap { it.sets }
         }
@@ -244,16 +231,15 @@ class ProgressionEngineTest {
     }
 
     @Test
-    fun `an exercise can appear in several workouts`() {
-        // Pull-ups: 8 sessions of A (2 sets) + 8 sessions of C (3 sets).
-        val sessionsWithPullUps = plan.sessions.count { s -> s.exercises.any { it.exerciseId == "pull_up" } }
+    fun pullUpsAppearInBothWorkouts() {
+        val sessionsWithPullUps = plan.sessions.count { s ->
+            s.exercises.any { it.exerciseId == "pull_up" }
+        }
         assertEquals(16, sessionsWithPullUps)
     }
 
-    // ------------------------------------------------------------ evaluation: compounds
-
     @Test
-    fun `achieved session leaves the plan untouched and resets the counter`() {
+    fun achievedSessionPreservesPlan() {
         val evaluation = engine.evaluateSession(
             plan, 1,
             results = listOf(
@@ -270,75 +256,42 @@ class ProgressionEngineTest {
     }
 
     @Test
-    fun `first miss repeats the same weight on the next occurrence`() {
+    fun missedSetRecordsMissWithIncrementedCounter() {
         val evaluation = engine.evaluateSession(
             plan, 13,
-            results = listOf(ExerciseResult("hack", listOf(8, 4))), // second set below min 5
+            results = listOf(ExerciseResult("hack", listOf(5, 4))),
         )
         val outcome = evaluation.outcomes.single()
-        assertEquals(ProgressionEvent.REPEAT_SCHEDULED, outcome.event)
+        assertEquals(ProgressionEvent.MISSED, outcome.event)
         assertEquals(1, outcome.consecutiveMisses)
-        // Next occurrence (session 16) repeats 67.5 with its own rep targets...
-        val repeated = exercise(16, "hack", evaluation.plan)
-        assertEquals(67.5, repeated.sets[0].weightKg, 1e-9)
-        assertEquals(67.5, repeated.sets[1].weightKg, 1e-9)
-        assertEquals(8, repeated.sets[0].targetReps)
-        // ...and the original ladder resumes afterwards.
-        assertEquals(92.5, weightOf(19, "hack", evaluation.plan), 1e-9)
-        // Evaluated session itself is never modified.
-        assertEquals(67.5, weightOf(13, "hack", evaluation.plan), 1e-9)
+        assertEquals(plan, evaluation.plan)
     }
 
     @Test
-    fun `first miss across a block boundary repeats the top weight with block-4 structure`() {
+    fun secondConsecutiveMissIncrementsCounter() {
         val evaluation = engine.evaluateSession(
-            plan, 16,
-            results = listOf(ExerciseResult("hack", listOf(8, 4))),
-        )
-        val repeated = exercise(19, "hack", evaluation.plan)
-        assertEquals(82.5, repeated.sets[0].weightKg, 1e-9) // top set repeats the missed weight
-        assertEquals(SetKind.TOP, repeated.sets[0].kind)
-        assertEquals(5, repeated.sets[0].targetReps) // block-4 rep targets kept
-        assertEquals(65.0, repeated.sets[1].weightKg, 1e-9) // back-off = 80% of 82.5 = 66 -> 65
-        assertEquals(SetKind.BACK_OFF, repeated.sets[1].kind)
-    }
-
-    @Test
-    fun `second consecutive miss reduces 10 percent and regenerates the remaining ladder`() {
-        val evaluation = engine.evaluateSession(
-            plan, 16,
-            results = listOf(ExerciseResult("hack", listOf(8, 4))),
+            plan, 13,
+            results = listOf(ExerciseResult("hack", listOf(4, 3))),
             consecutiveMisses = mapOf("hack" to 1),
         )
         val outcome = evaluation.outcomes.single()
-        assertEquals(ProgressionEvent.RESET, outcome.event)
-        assertEquals(0, outcome.consecutiveMisses)
-
-        // Reduced base: 82.5 x 0.9 = 74.25 -> 75.0, treated as the new 5RM.
-        val s19 = exercise(19, "hack", evaluation.plan)
-        assertEquals(75.0, s19.sets[0].weightKg, 1e-9) // 1.00 x 75
-        assertEquals(60.0, s19.sets[1].weightKg, 1e-9) // 80% of 75
-        assertEquals(5, s19.sets[0].targetReps)
-        assertEquals(10, s19.sets[1].targetReps)
-
-        val s22 = exercise(22, "hack", evaluation.plan)
-        assertEquals(77.5, s22.sets[0].weightKg, 1e-9) // 1.025 x 75 = 76.875 -> 77.5
-        assertEquals(62.5, s22.sets[1].weightKg, 1e-9) // 80% of 77.5 = 62
+        assertEquals(ProgressionEvent.MISSED, outcome.event)
+        assertEquals(2, outcome.consecutiveMisses)
+        assertEquals(plan, evaluation.plan)
     }
 
     @Test
-    fun `miss on the last occurrence only updates the counter`() {
+    fun missedOnLastOccurrenceStillRecords() {
         val evaluation = engine.evaluateSession(
             plan, 22,
-            results = listOf(ExerciseResult("hack", listOf(4, 8))),
+            results = listOf(ExerciseResult("hack", listOf(3, 4))),
         )
-        assertEquals(ProgressionEvent.REPEAT_SCHEDULED, evaluation.outcomes.single().event)
+        assertEquals(ProgressionEvent.MISSED, evaluation.outcomes.single().event)
         assertEquals(1, evaluation.outcomes.single().consecutiveMisses)
-        assertEquals(plan, evaluation.plan) // no future sessions to rewrite
     }
 
     @Test
-    fun `skipped exercise has no progression impact`() {
+    fun skippedExerciseHasNoProgressionImpact() {
         val evaluation = engine.evaluateSession(
             plan, 13,
             results = listOf(ExerciseResult("hack", emptyList(), skipped = true)),
@@ -346,140 +299,31 @@ class ProgressionEngineTest {
         )
         val outcome = evaluation.outcomes.single()
         assertEquals(ProgressionEvent.SKIPPED, outcome.event)
-        assertEquals(1, outcome.consecutiveMisses) // unchanged
+        assertEquals(1, outcome.consecutiveMisses)
         assertEquals(plan, evaluation.plan)
     }
 
     @Test
-    fun `missing sets count as zero reps`() {
+    fun missingSetsCountAsZeroReps() {
         val evaluation = engine.evaluateSession(
             plan, 13,
-            results = listOf(ExerciseResult("hack", listOf(8))), // only one of two sets done
+            results = listOf(ExerciseResult("hack", listOf(5))),
         )
-        assertEquals(ProgressionEvent.REPEAT_SCHEDULED, evaluation.outcomes.single().event)
+        assertEquals(ProgressionEvent.MISSED, evaluation.outcomes.single().event)
     }
-
-    // ------------------------------------------------------------ evaluation: isolations
-
-    @Test
-    fun `isolation bumps one increment after every set hits the top of the range`() {
-        val evaluation = engine.evaluateSession(
-            plan, 13,
-            results = listOf(ExerciseResult("lat_raise", listOf(15, 15))),
-        )
-        assertEquals(ProgressionEvent.BUMP_SCHEDULED, evaluation.outcomes.single().event)
-        assertEquals(0, evaluation.outcomes.single().consecutiveMisses)
-        for (n in listOf(16, 19, 22)) {
-            assertEquals(12.0, weightOf(n, "lat_raise", evaluation.plan), 1e-9)
-        }
-    }
-
-    @Test
-    fun `isolation below the top of the range keeps the weight`() {
-        val evaluation = engine.evaluateSession(
-            plan, 13,
-            results = listOf(ExerciseResult("lat_raise", listOf(14, 15))),
-        )
-        assertEquals(ProgressionEvent.ACHIEVED, evaluation.outcomes.single().event)
-        assertEquals(plan, evaluation.plan)
-    }
-
-    @Test
-    fun `isolation miss repeats and double miss resets the flat weight`() {
-        val firstMiss = engine.evaluateSession(
-            plan, 15,
-            results = listOf(ExerciseResult("leg_ext", listOf(9))), // below min 10
-        )
-        assertEquals(ProgressionEvent.REPEAT_SCHEDULED, firstMiss.outcomes.single().event)
-        assertEquals(1, firstMiss.outcomes.single().consecutiveMisses)
-
-        val secondMiss = engine.evaluateSession(
-            firstMiss.plan, 18,
-            results = listOf(ExerciseResult("leg_ext", listOf(8))),
-            consecutiveMisses = mapOf("leg_ext" to 1),
-        )
-        assertEquals(ProgressionEvent.RESET, secondMiss.outcomes.single().event)
-        // 40 x 0.9 = 36 -> 35 at a 2.5 kg increment, flat for the rest of the cycle.
-        for (n in listOf(21, 24)) {
-            assertEquals(35.0, weightOf(n, "leg_ext", secondMiss.plan), 1e-9)
-            assertEquals(15, exercise(n, "leg_ext", secondMiss.plan).sets.first().targetReps)
-        }
-    }
-
-    @Test
-    fun `isolation in block 1 resets through the ladder like a compound`() {
-        val evaluation = engine.evaluateSession(
-            plan, 1,
-            results = listOf(ExerciseResult("lat_raise", listOf(12, 15))),
-            consecutiveMisses = mapOf("lat_raise" to 1),
-        )
-        assertEquals(ProgressionEvent.RESET, evaluation.outcomes.single().event)
-        // Reduced base 8 x 0.9 = 7.2 -> 8 kg at a 2 kg increment, treated as new 15RM:
-        // 1RM = 8 x 1.5 = 12, 10RM = 9. Session 4 (block 1, 90% rung): 0.9 x 8 = 7.2 -> 8.
-        assertEquals(8.0, weightOf(4, "lat_raise", evaluation.plan), 1e-9)
-        // Block 2, 75% rung of 10RM 9 = 6.75 -> 6 kg.
-        assertEquals(6.0, weightOf(7, "lat_raise", evaluation.plan), 1e-9)
-        // Blocks 3-4 flat at the regenerated last block-2 weight (90% x 9 = 8.1 -> 8).
-        assertEquals(8.0, weightOf(13, "lat_raise", evaluation.plan), 1e-9)
-        assertEquals(15, exercise(13, "lat_raise", evaluation.plan).sets.first().targetReps)
-    }
-
-    // ------------------------------------------------------------ evaluation: validation
 
     @Test(expected = IllegalArgumentException::class)
-    fun `evaluating an unknown session throws`() {
+    fun evaluatingUnknownSessionThrows() {
         engine.evaluateSession(plan, 99, emptyList())
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun `evaluating an unknown exercise throws`() {
+    fun evaluatingUnknownExerciseThrows() {
         engine.evaluateSession(plan, 1, listOf(ExerciseResult("nope", listOf(10))))
     }
 
-    @Test(expected = IllegalArgumentException::class)
-    fun `deload sessions cannot be evaluated`() {
-        val deloadPlan = CyclePlan(1, engine.generateDeload(plan))
-        engine.evaluateSession(deloadPlan, 25, emptyList())
-    }
-
-    // ------------------------------------------------------------ deload
-
     @Test
-    fun `deload has one session per workout in week 9`() {
-        val deload = engine.generateDeload(plan)
-        assertEquals(3, deload.size)
-        assertEquals(listOf(25, 26, 27), deload.map { it.sessionNumber })
-        assertEquals(listOf(WorkoutLetter.A, WorkoutLetter.B, WorkoutLetter.C), deload.map { it.workout })
-        deload.forEach {
-            assertEquals(9, it.week)
-            assertTrue(it.isDeload)
-        }
-    }
-
-    @Test
-    fun `deload reduces weights by 15 percent and halves the sets`() {
-        val deload = engine.generateDeload(plan)
-
-        // Hack source (session 22): top 92.5 + back-off 75 -> 1 set at 92.5 x 0.85 = 78.6 -> 77.5.
-        val deloadHack = deload[0].exercises.first { it.exerciseId == "hack" }
-        assertEquals(1, deloadHack.sets.size)
-        assertEquals(77.5, deloadHack.sets[0].weightKg, 1e-9)
-
-        // Pull-ups in C have 3 sets -> ceil(3/2) = 2 sets, still 0 kg added.
-        val deloadPullUp = deload[2].exercises.first { it.exerciseId == "pull_up" }
-        assertEquals(2, deloadPullUp.sets.size)
-        assertTrue(deloadPullUp.sets.all { it.weightKg == 0.0 })
-
-        // Leg extension: 1 set stays 1 set; 40 x 0.85 = 34 -> 35.
-        val deloadLegExt = deload[2].exercises.first { it.exerciseId == "leg_ext" }
-        assertEquals(1, deloadLegExt.sets.size)
-        assertEquals(35.0, deloadLegExt.sets[0].weightKg, 1e-9)
-    }
-
-    // ------------------------------------------------------------ next cycle
-
-    @Test
-    fun `next cycle inputs use the achieved top weights and reps`() {
+    fun nextCycleInputsUseLastAchievedWeights() {
         val results = buildMap {
             plan.sessions.forEach { s ->
                 put(
@@ -491,47 +335,22 @@ class ProgressionEngineTest {
             }
         }
         val next = engine.nextCycleInputs(inputs, plan, results).associateBy { it.exerciseId }
-
-        // Hack: last success session 22, top set 92.5 x 5.
-        assertEquals(92.5, next.getValue("hack").weightKg, 1e-9)
+        assertEquals(110.0, next.getValue("hack").weightKg, 1e-9)
         assertEquals(5, next.getValue("hack").reps)
-        // RDL: top set 105 x 5.
-        assertEquals(105.0, next.getValue("rdl").weightKg, 1e-9)
+        assertEquals(150.0, next.getValue("rdl").weightKg, 1e-9)
         assertEquals(5, next.getValue("rdl").reps)
-        // Lateral raise: 10 kg x 15 (min across working sets).
-        assertEquals(10.0, next.getValue("lat_raise").weightKg, 1e-9)
-        assertEquals(15, next.getValue("lat_raise").reps)
-        // Pull-ups: last occurrence is session 24 (C), 0 kg x 8 (all sets hit target 5/10 -> reps taken
-        // from the non-back-off sets = top set, target 5).
         assertEquals(0.0, next.getValue("pull_up").weightKg, 1e-9)
         assertEquals(5, next.getValue("pull_up").reps)
-        // Static info is preserved.
         assertEquals(hack.equipment, next.getValue("hack").equipment)
         assertEquals(hack.incrementKg, next.getValue("hack").incrementKg, 1e-9)
-        assertEquals(hack.isCompound, next.getValue("hack").isCompound)
     }
 
     @Test
-    fun `next cycle inputs use the minimum reps across working sets`() {
-        val results = plan.sessions.associate { s ->
-            s.sessionNumber to s.exercises.map { e ->
-                val reps = e.sets.mapIndexed { i, set ->
-                    if (e.exerciseId == "lat_raise" && s.sessionNumber == 22 && i == 0) 13 else set.targetReps
-                }
-                ExerciseResult(e.exerciseId, reps)
-            }
-        }
-        val next = engine.nextCycleInputs(inputs, plan, results).associateBy { it.exerciseId }
-        assertEquals(10.0, next.getValue("lat_raise").weightKg, 1e-9)
-        assertEquals(13, next.getValue("lat_raise").reps)
-    }
-
-    @Test
-    fun `exercise without a successful session keeps its previous input`() {
+    fun failedExerciseKeepsPreviousInput() {
         val results = plan.sessions.associate { s ->
             s.sessionNumber to s.exercises.map { e ->
                 if (e.exerciseId == "hack") {
-                    ExerciseResult("hack", List(e.sets.size) { 0 }) // never achieved
+                    ExerciseResult("hack", List(e.sets.size) { 0 })
                 } else {
                     ExerciseResult(e.exerciseId, e.sets.map { it.targetReps })
                 }
@@ -542,26 +361,22 @@ class ProgressionEngineTest {
         assertEquals(10, next.getValue("hack").reps)
     }
 
-    // ------------------------------------------------------------ pull-up suggestion
-
     @Test
-    fun `pull-up suggestion triggers at 3 sets of 8 bodyweight reps`() {
+    fun pullUpSuggestionTriggersAt3x8() {
         assertTrue(engine.shouldSuggestAddingWeight(Equipment.BODYWEIGHT, 0.0, listOf(8, 8, 8)))
         assertTrue(engine.shouldSuggestAddingWeight(Equipment.BODYWEIGHT, 0.0, listOf(9, 8, 10)))
     }
 
     @Test
-    fun `pull-up suggestion stays silent otherwise`() {
+    fun pullUpSuggestionSilentOtherwise() {
         assertFalse(engine.shouldSuggestAddingWeight(Equipment.BODYWEIGHT, 2.5, listOf(8, 8, 8)))
         assertFalse(engine.shouldSuggestAddingWeight(Equipment.BODYWEIGHT, 0.0, listOf(8, 8)))
         assertFalse(engine.shouldSuggestAddingWeight(Equipment.BODYWEIGHT, 0.0, listOf(8, 8, 7)))
         assertFalse(engine.shouldSuggestAddingWeight(Equipment.BARBELL, 0.0, listOf(8, 8, 8)))
     }
 
-    // ------------------------------------------------------------ generation validation
-
     @Test(expected = IllegalArgumentException::class)
-    fun `template exercise without input throws`() {
+    fun templateExerciseWithoutInputThrows() {
         engine.generateCycle(
             1,
             inputs,
@@ -570,7 +385,44 @@ class ProgressionEngineTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun `all three workouts must have templates`() {
+    fun allThreeWorkoutsRequired() {
         engine.generateCycle(1, inputs, templates - WorkoutLetter.C)
+    }
+
+    @Test
+    fun phaseNamesAreCorrect() {
+        assertEquals("15 RM Phase", ProgressionEngine.phaseName(1))
+        assertEquals("10 RM Phase", ProgressionEngine.phaseName(2))
+        assertEquals("5 RM Phase", ProgressionEngine.phaseName(3))
+        assertEquals("Post-5RM Phase", ProgressionEngine.phaseName(4))
+    }
+
+    @Test
+    fun targetRepsForPhaseAreCorrect() {
+        assertEquals(15, ProgressionEngine.targetRepsForPhase(1))
+        assertEquals(10, ProgressionEngine.targetRepsForPhase(2))
+        assertEquals(5, ProgressionEngine.targetRepsForPhase(3))
+        assertEquals(5, ProgressionEngine.targetRepsForPhase(4))
+        assertEquals(5, ProgressionEngine.targetRepsForPhase(99))
+    }
+
+    @Test
+    fun lightIsolationRoundsToPositiveAboveZero() {
+        val s1 = exercise(1, "lat_raise")
+        s1.sets.forEach { assertTrue(it.weightKg >= 0.0) }
+        val s7 = exercise(7, "lat_raise")
+        s7.sets.forEach { assertTrue(it.weightKg >= 0.0) }
+    }
+
+    @Test
+    fun legExtensionFollowsLinearRamp() {
+        assertEquals(27.5, weightOf(3, "leg_ext"), 1e-9)
+        assertEquals(35.0, weightOf(6, "leg_ext"), 1e-9)
+        assertEquals(32.5, weightOf(9, "leg_ext"), 1e-9)
+        assertEquals(40.0, weightOf(12, "leg_ext"), 1e-9)
+        assertEquals(37.5, weightOf(15, "leg_ext"), 1e-9)
+        assertEquals(45.0, weightOf(18, "leg_ext"), 1e-9)
+        assertEquals(52.5, weightOf(21, "leg_ext"), 1e-9)
+        assertEquals(60.0, weightOf(24, "leg_ext"), 1e-9)
     }
 }

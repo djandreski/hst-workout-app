@@ -65,11 +65,12 @@ fun SetupScreen(viewModel: SetupViewModel = hiltViewModel()) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text(
-                    text = "Enter your current working weight and reps for each exercise " +
-                        "(not your 1RM). The app calculates the whole 8-week cycle from these.",
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+            Text(
+                text = "Enter your approximate 15-rep max for each exercise " +
+                    "(not your 1RM). The app derives your 10RM and 5RM and generates " +
+                    "the full 24-workout HST cycle.",
+                style = MaterialTheme.typography.bodyLarge,
+            )
             }
 
             for (group in state.groups) {

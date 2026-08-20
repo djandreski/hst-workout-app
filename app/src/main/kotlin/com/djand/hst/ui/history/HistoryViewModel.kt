@@ -91,17 +91,16 @@ class HistoryViewModel @Inject constructor(
                 }
                 SessionUi(
                     id = session.id,
-                    title = "Workout ${session.workoutLetter}",
-                    subtitle = listOfNotNull(
-                        "Week ${session.week}",
-                        "Session ${session.sessionNumber}",
-                        if (session.isDeload) "Deload" else null,
-                        session.completedAtEpochMs?.let(DisplayFormat::shortDate),
-                        DisplayFormat.durationMinutes(
-                            session.startedAtEpochMs,
-                            session.completedAtEpochMs,
-                        ),
-                    ).joinToString(" · "),
+                        title = "Workout ${session.workoutLetter}",
+                        subtitle = listOfNotNull(
+                            "Session ${session.sessionNumber}",
+                            if (session.phase in 1..4) com.djand.hst.domain.progression.ProgressionEngine.phaseName(session.phase) else null,
+                            session.completedAtEpochMs?.let(DisplayFormat::shortDate),
+                            DisplayFormat.durationMinutes(
+                                session.startedAtEpochMs,
+                                session.completedAtEpochMs,
+                            ),
+                        ).joinToString(" · "),
                     exercises = exercises,
                 )
             },

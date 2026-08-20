@@ -18,17 +18,6 @@ import com.djand.hst.data.local.entity.TemplateExerciseEntity
 import com.djand.hst.data.local.entity.WorkoutSessionEntity
 import com.djand.hst.data.local.entity.WorkoutTemplateEntity
 
-/**
- * Offline Room database for the HST tracker. Schema shape:
- *
- * - Catalogue (seeded once): `exercises`, `workout_templates`, `template_exercises`.
- * - Progress: `cycles` -> `workout_sessions` -> `set_logs`, plus
- *   `exercise_progressions` (per-cycle per-exercise engine state).
- * - Optional log: `bodyweight_entries`.
- *
- * Enums (Equipment, WorkoutLetter, SetKind, SessionStatus, SetStatus) are stored
- * as their names via Room's built-in enum support.
- */
 @Database(
     entities = [
         ExerciseEntity::class,
@@ -40,7 +29,7 @@ import com.djand.hst.data.local.entity.WorkoutTemplateEntity
         SetLogEntity::class,
         BodyweightEntryEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class HstDatabase : RoomDatabase() {
@@ -55,5 +44,17 @@ abstract class HstDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "hst.db"
+
+        val MIGRATION_1_2 = androidx.room.migration.Migration(1, 2) { db ->
+            db.execSQL(
+                "ALTER TABLE workout_sessions ADD COLUMN phase INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "UPDATE workout_sessions SET phase = block WHERE isDeload = 0",
+            )
+            db.execSQL(
+                "UPDATE workout_sessions SET phase = (sessionNumber - 1) / 6 + 1 WHERE isDeload != 0 AND sessionNumber <= 24",
+            )
+        }
     }
 }

@@ -3,19 +3,12 @@ package com.djand.hst.domain.model
 /**
  * Everything the progression engine needs to know about one exercise.
  *
- * [weightKg] x [reps] is the user's current working weight as entered in the setup
- * wizard (NOT a 1RM). It is treated as the TRUE rep max for that rep count: the whole
- * cycle's block ladders are derived from it via Epley, and each block's ladder peaks
- * exactly at the corresponding derived rep max.
+ * [weightKg] x [reps] is the user's approximate 15RM as entered in the setup wizard.
+ * The progression engine derives 10RM and 5RM from it via Epley, and each of the four
+ * HST phases ramps linearly (by [incrementKg] per workout) toward the corresponding RM.
  *
  * For [Equipment.BODYWEIGHT] exercises (pull-ups), [weightKg] is the ADDED weight only;
  * 0 kg means bodyweight alone.
- *
- * [isCompound] selects the progression policy:
- * - compound: block ladders with top-set/back-off in block 4; miss -> repeat,
- *   double miss -> -10% and regenerate.
- * - isolation: same ladders in blocks 1-2, flat 10-15 rep work in blocks 3-4 with
- *   reactive reps-first progression.
  */
 data class ExerciseInput(
     val exerciseId: String,

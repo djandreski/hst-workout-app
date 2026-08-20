@@ -1,7 +1,7 @@
 package com.djand.hst.domain.model
 
-/** Role of a set inside a block-4 prescription (or [NORMAL] everywhere else). */
-enum class SetKind { NORMAL, TOP, BACK_OFF }
+/** Role of a set: [NORMAL] everywhere except negatives in phase 4. */
+enum class SetKind { NORMAL, NEGATIVE }
 
 /**
  * One prescribed set. Hitting [minReps] on every set counts as achieving the
@@ -15,9 +15,8 @@ data class SetPrescription(
 )
 
 /**
- * All prescribed sets for one exercise inside one session. Self-contained on purpose
- * ([incrementKg], [isCompound]) so a persisted plan can be re-evaluated and adjusted
- * (repeat / -10% reset / isolation bump) without consulting the exercise catalogue.
+ * All prescribed sets for one exercise inside one session. Self-contained so the
+ * persisted plan can be reconstructed and re-evaluated without the exercise catalogue.
  */
 data class ExercisePrescription(
     val exerciseId: String,
@@ -29,20 +28,19 @@ data class ExercisePrescription(
 /**
  * One fully prescribed workout session.
  *
- * The main cycle consists of sessions 1..24: week 1..8, block 1..4 (6 sessions per
- * 2-week block). The deload week consists of sessions 25..27 (week 9, block 0,
- * [isDeload] = true) and does not drive progression.
+ * The main cycle consists of sessions 1..24: phase 1 (15RM, w1-6), phase 2 (10RM, w7-12),
+ * phase 3 (5RM, w13-18), phase 4 (post-5RM/negatives, w19-24). Each phase spans exactly 6
+ * sessions. After workout 24 the user takes a week of strategic deconditioning before
+ * starting the next cycle with new RM values.
  */
 data class SessionPrescription(
     val sessionNumber: Int,
-    val week: Int,
-    val block: Int,
+    val phase: Int,
     val workout: WorkoutLetter,
-    val isDeload: Boolean,
     val exercises: List<ExercisePrescription>,
 )
 
-/** A complete, deterministic prescription of one 8-week cycle (24 sessions). */
+/** A complete, deterministic prescription of one cycle (24 sessions). */
 data class CyclePlan(
     val cycleNumber: Int,
     val sessions: List<SessionPrescription>,

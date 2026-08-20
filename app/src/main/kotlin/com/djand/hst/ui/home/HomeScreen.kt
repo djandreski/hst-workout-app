@@ -123,15 +123,6 @@ fun HomeScreen(
                 }
             }
 
-            if (state.upcoming?.isDeload == true) {
-                item {
-                    BannerCard(
-                        title = "Time for Deload",
-                        body = "85% of your last weights, half the sets, no failure.",
-                    )
-                }
-            }
-
             if (state.pullUpSuggestion) {
                 item {
                     BannerCard(
@@ -146,8 +137,7 @@ fun HomeScreen(
                 item {
                     CycleProgressCard(
                         cycleNumber = state.cycleNumber ?: 1,
-                        week = upcoming.week,
-                        isDeload = upcoming.isDeload,
+                        phase = upcoming.phase,
                         completedSessions = state.completedSessions,
                     )
                 }
@@ -240,20 +230,21 @@ private fun TodayCard(upcoming: HomeViewModel.UpcomingUi, onStart: () -> Unit) {
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                if (upcoming.isDeload) "Deload" else "Today's Workout",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "Workout ${upcoming.workout}",
-                style = MaterialTheme.typography.displayMedium,
-            )
-            Text(
-                "Week ${upcoming.week} · Session ${upcoming.sessionNumber}",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Text(
+            "Today's Workout",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "Workout ${upcoming.workout}",
+            style = MaterialTheme.typography.displayMedium,
+        )
+        Text(
+            "Session ${upcoming.sessionNumber} · " +
+                ProgressionEngine.phaseName(upcoming.phase),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = onStart,
@@ -282,11 +273,11 @@ private fun CycleFinishedCard(busy: Boolean, onStartNextCycle: () -> Unit) {
         ) {
             Text("Cycle complete", style = MaterialTheme.typography.displaySmall)
             Spacer(Modifier.height(8.dp))
-            Text(
-                "Your achieved weights become the starting point of the next cycle.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Text(
+            "Take approximately 1 week off, then start your next cycle with updated RM values.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = onStartNextCycle,
@@ -319,11 +310,10 @@ private fun BannerCard(title: String, body: String) {
 @Composable
 private fun CycleProgressCard(
     cycleNumber: Int,
-    week: Int,
-    isDeload: Boolean,
+    phase: Int,
     completedSessions: Int,
 ) {
-    val totalSessions = ProgressionEngine.SESSIONS_PER_CYCLE + ProgressionEngine.WORKOUTS_PER_ROTATION
+    val totalSessions = ProgressionEngine.SESSIONS_PER_CYCLE
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -332,7 +322,7 @@ private fun CycleProgressCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                if (isDeload) "Deload week" else "Week $week of 8",
+                ProgressionEngine.phaseName(phase),
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(Modifier.height(8.dp))

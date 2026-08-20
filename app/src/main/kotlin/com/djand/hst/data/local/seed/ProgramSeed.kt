@@ -7,15 +7,14 @@ import com.djand.hst.domain.model.Equipment
 import com.djand.hst.domain.model.WorkoutLetter
 
 /**
- * The fixed HST program from the PRD, seeded into the database at creation.
+ * The fixed HST program, seeded into the database at creation.
  *
  * Three workouts rotate continuously. Pull-ups appear in both A and C, so the
  * catalogue holds 23 unique exercises, not 24.
  *
- * Compound flag drives the progression policy (block ladders + top/back-off sets
- * vs. flat 10-15 rep isolation work with reactive reps-first progression).
- * [ExerciseEntity.incrementKg] starts at the equipment default and follows the
- * per-equipment increment setting afterwards.
+ * [ExerciseEntity.incrementKg] is the per-workout ramp step (the spreadsheet E
+ * column): larger for heavy compounds, smaller for isolation/DB work. These
+ * increments also serve as the rounding increment.
  */
 object ProgramSeed {
 
@@ -49,49 +48,50 @@ object ProgramSeed {
 
     // ------------------------------------------------------------------ catalogue
 
-    private fun exercise(id: String, name: String, equipment: Equipment, isCompound: Boolean) =
+    private fun exercise(id: String, name: String, equipment: Equipment, incrementKg: Double, isCompound: Boolean) =
         ExerciseEntity(
             id = id,
             name = name,
             equipment = equipment,
-            incrementKg = equipment.defaultIncrementKg,
+            incrementKg = incrementKg,
             isCompound = isCompound,
         )
 
     val exercises: List<ExerciseEntity> = listOf(
         // Workout A
-        exercise(HACK_SQUAT, "Hack Squat", Equipment.MACHINE, isCompound = true),
-        exercise(INCLINE_BENCH_PRESS, "Incline Bench Press", Equipment.BARBELL, isCompound = true),
-        exercise(PULL_UP, "Pull-ups", Equipment.BODYWEIGHT, isCompound = true),
-        exercise(CHEST_SUPPORTED_ROW, "Chest Supported Row", Equipment.MACHINE, isCompound = true),
-        exercise(DB_LATERAL_RAISE, "Dumbbell Lateral Raise", Equipment.DUMBBELL, isCompound = false),
-        exercise(SEATED_LEG_CURL, "Seated Leg Curl", Equipment.MACHINE, isCompound = false),
-        exercise(CABLE_TRICEPS_PUSHDOWN, "Cable Triceps Pushdown", Equipment.CABLE, isCompound = false),
-        exercise(EZ_BAR_CURL, "EZ Bar Curl", Equipment.BARBELL, isCompound = false),
+        exercise(HACK_SQUAT, "Hack Squat", Equipment.MACHINE, 10.0, isCompound = true),
+        exercise(INCLINE_BENCH_PRESS, "Incline Bench Press", Equipment.BARBELL, 5.0, isCompound = true),
+        exercise(PULL_UP, "Pull-ups", Equipment.BODYWEIGHT, 2.5, isCompound = true),
+        exercise(CHEST_SUPPORTED_ROW, "Chest Supported Row", Equipment.MACHINE, 5.0, isCompound = true),
+        exercise(DB_LATERAL_RAISE, "Dumbbell Lateral Raise", Equipment.DUMBBELL, 2.5, isCompound = false),
+        exercise(SEATED_LEG_CURL, "Seated Leg Curl", Equipment.MACHINE, 2.5, isCompound = false),
+        exercise(CABLE_TRICEPS_PUSHDOWN, "Cable Triceps Pushdown", Equipment.CABLE, 2.5, isCompound = false),
+        exercise(EZ_BAR_CURL, "EZ Bar Curl", Equipment.BARBELL, 2.5, isCompound = false),
 
         // Workout B
-        exercise(ROMANIAN_DEADLIFT, "Romanian Deadlift", Equipment.BARBELL, isCompound = true),
-        exercise(FLAT_DB_PRESS, "Flat Dumbbell Press", Equipment.DUMBBELL, isCompound = true),
-        exercise(LAT_PULLDOWN, "Lat Pulldown", Equipment.CABLE, isCompound = true),
-        exercise(SEATED_CABLE_ROW, "Seated Cable Row", Equipment.CABLE, isCompound = true),
-        exercise(DB_SHOULDER_PRESS, "Dumbbell Shoulder Press", Equipment.DUMBBELL, isCompound = true),
-        exercise(STANDING_CALF_RAISE, "Standing Calf Raise", Equipment.MACHINE, isCompound = false),
+        exercise(ROMANIAN_DEADLIFT, "Romanian Deadlift", Equipment.BARBELL, 10.0, isCompound = true),
+        exercise(FLAT_DB_PRESS, "Flat Dumbbell Press", Equipment.DUMBBELL, 5.0, isCompound = true),
+        exercise(LAT_PULLDOWN, "Lat Pulldown", Equipment.CABLE, 5.0, isCompound = true),
+        exercise(SEATED_CABLE_ROW, "Seated Cable Row", Equipment.CABLE, 5.0, isCompound = true),
+        exercise(DB_SHOULDER_PRESS, "Dumbbell Shoulder Press", Equipment.DUMBBELL, 5.0, isCompound = true),
+        exercise(STANDING_CALF_RAISE, "Standing Calf Raise", Equipment.MACHINE, 2.5, isCompound = false),
         exercise(
             OVERHEAD_CABLE_TRICEPS_EXTENSION,
             "Overhead Cable Triceps Extension",
             Equipment.CABLE,
+            2.5,
             isCompound = false,
         ),
-        exercise(INCLINE_DB_CURL, "Incline Dumbbell Curl", Equipment.DUMBBELL, isCompound = false),
+        exercise(INCLINE_DB_CURL, "Incline Dumbbell Curl", Equipment.DUMBBELL, 2.5, isCompound = false),
 
         // Workout C (pull-ups shared with workout A)
-        exercise(BULGARIAN_SPLIT_SQUAT, "Bulgarian Split Squat", Equipment.DUMBBELL, isCompound = true),
-        exercise(INCLINE_DB_PRESS, "Incline Dumbbell Press", Equipment.DUMBBELL, isCompound = true),
-        exercise(CHEST_SUPPORTED_TBAR_ROW, "Chest Supported T-Bar Row", Equipment.MACHINE, isCompound = true),
-        exercise(CABLE_LATERAL_RAISE, "Cable Lateral Raise", Equipment.CABLE, isCompound = false),
-        exercise(LEG_EXTENSION, "Leg Extension", Equipment.MACHINE, isCompound = false),
-        exercise(FACE_PULL, "Face Pull", Equipment.CABLE, isCompound = false),
-        exercise(HAMMER_CURL, "Hammer Curl", Equipment.DUMBBELL, isCompound = false),
+        exercise(BULGARIAN_SPLIT_SQUAT, "Bulgarian Split Squat", Equipment.DUMBBELL, 5.0, isCompound = true),
+        exercise(INCLINE_DB_PRESS, "Incline Dumbbell Press", Equipment.DUMBBELL, 5.0, isCompound = true),
+        exercise(CHEST_SUPPORTED_TBAR_ROW, "Chest Supported T-Bar Row", Equipment.MACHINE, 5.0, isCompound = true),
+        exercise(CABLE_LATERAL_RAISE, "Cable Lateral Raise", Equipment.CABLE, 2.5, isCompound = false),
+        exercise(LEG_EXTENSION, "Leg Extension", Equipment.MACHINE, 2.5, isCompound = false),
+        exercise(FACE_PULL, "Face Pull", Equipment.CABLE, 2.5, isCompound = false),
+        exercise(HAMMER_CURL, "Hammer Curl", Equipment.DUMBBELL, 2.5, isCompound = false),
     )
 
     val templates: List<WorkoutTemplateEntity> =

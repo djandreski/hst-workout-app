@@ -35,9 +35,8 @@ import kotlinx.coroutines.flow.Flow
  * The engine works on an immutable [CyclePlan]; the database stores that plan
  * materialised as `workout_sessions` + `set_logs` rows. This repository
  * reconstructs the plan from those rows, lets the engine evaluate completed
- * sessions, and writes the resulting rewrites (repeat / -10% reset / isolation
- * bump) back to the future PENDING set rows. Because prescriptions only ever live
- * in the database, progression is deterministic across process restarts.
+ * sessions, and persists the outcomes. The plan itself is never rewritten
+ * mid-cycle — the HST spreadsheet schedule is always followed as prescribed.
  */
 @Singleton
 class CycleRepository @Inject constructor(
@@ -52,25 +51,11 @@ class CycleRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
 ) {
 
-    /** The unfinished cycle, if any. */
     val activeCycle: Flow<CycleEntity?> = cycleDao.observeActive()
 
-    /** Progression state (miss counters, pull-up suggestion) of the active cycle. */
     fun observeProgressions(cycleId: Long): Flow<List<ExerciseProgressionEntity>> =
         progressionDao.observeForCycle(cycleId)
 
-    // ------------------------------------------------------------- cycle start
-
-    /**
-     * Generates and persists a full new cycle from [inputs] (working weight x reps
-     * per exercise): the cycle row, the per-exercise progression snapshots, and all
-     * 24 sessions with their prescribed PENDING set rows. Marks setup complete.
-     *
-     * Deload sessions are NOT created here; they are generated from the final plan
-     * state when session 24 completes.
-     *
-     * @return the id of the new cycle.
-     */
     suspend fun startNewCycle(
         inputs: List<ExerciseInput>,
         now: Long = System.currentTimeMillis(),
@@ -89,12 +74,6 @@ class CycleRepository @Inject constructor(
         return cycleId
     }
 
-    /**
-     * Computes the setup inputs of the next cycle from what was actually achieved
-     * in the most recent cycle (engine `nextCycleInputs`). Increments are taken
-     * from the current exercise catalogue, so Settings changes made during the
-     * finished cycle are picked up.
-     */
     suspend fun computeNextCycleInputs(): List<ExerciseInput> {
         val cycle = cycleDao.getLatest() ?: error("No cycle exists yet")
         val sessions = sessionDao.getSessionsWithSetsForCycle(cycle.id)
@@ -102,7 +81,7 @@ class CycleRepository @Inject constructor(
         val exercises = exerciseDao.getAll().associateBy { it.id }
         val plan = reconstructPlan(cycle.cycleNumber, sessions, progressions, exercises)
         val resultsBySession = sessions
-            .filter { it.session.status == SessionStatus.COMPLETED && !it.session.isDeload }
+            .filter { it.session.status == SessionStatus.COMPLETED && it.session.sessionNumber <= ProgressionEngine.SESSIONS_PER_CYCLE }
             .associate { it.session.sessionNumber to toExerciseResults(it.setLogs) }
         val inputs = progressions.map { p ->
             val exercise = exercises.getValue(p.exerciseId)
@@ -118,18 +97,6 @@ class CycleRepository @Inject constructor(
         return engine.nextCycleInputs(inputs, plan, resultsBySession)
     }
 
-    // ------------------------------------------------------------- session end
-
-    /**
-     * Completes a session whose sets have all been logged or skipped. For a main
-     * cycle session this evaluates the results with the engine, persists the new
-     * miss counters, rewrites future PENDING set rows, sets the pull-up suggestion
-     * flag when earned, and generates the deload week after session 24. For a
-     * deload session it only marks progress (no failure, no progression); once the
-     * last deload session completes, the cycle is closed.
-     *
-     * The whole operation is a single database transaction.
-     */
     suspend fun completeSession(sessionId: Long, now: Long = System.currentTimeMillis()) {
         db.withTransaction {
             val sessionWithSets = sessionDao.getSessionWithSets(sessionId)
@@ -144,8 +111,9 @@ class CycleRepository @Inject constructor(
 
             sessionDao.markCompleted(sessionId, SessionStatus.COMPLETED, now)
             val cycleId = sessionWithSets.session.cycleId
+            val sessionNumber = sessionWithSets.session.sessionNumber
 
-            if (sessionWithSets.session.isDeload) {
+            if (sessionNumber > ProgressionEngine.SESSIONS_PER_CYCLE) {
                 if (sessionDao.countSessionsNotInStatus(cycleId, SessionStatus.COMPLETED) == 0) {
                     cycleDao.markCompleted(cycleId, now)
                 }
@@ -160,19 +128,14 @@ class CycleRepository @Inject constructor(
 
             val results = toExerciseResults(sessionWithSets.setLogs)
             val misses = progressions.associate { it.exerciseId to it.consecutiveMisses }
-            val evaluation = engine.evaluateSession(plan, sessionWithSets.session.sessionNumber, results, misses)
+            val evaluation = engine.evaluateSession(plan, sessionNumber, results, misses)
 
-            // Persist the new miss counters.
             for (outcome in evaluation.outcomes) {
                 progressionDao.updateConsecutiveMisses(cycleId, outcome.exerciseId, outcome.consecutiveMisses)
             }
 
-            // Rewrite the prescriptions of all future sessions (repeat / reset / bump).
-            syncFutureSetLogs(sessions, evaluation.plan, afterSessionNumber = sessionWithSets.session.sessionNumber)
-
-            // Pull-up suggestion: "Start adding weight" at 3x8 bodyweight reps.
             val completedPrescription = plan.sessions.first {
-                it.sessionNumber == sessionWithSets.session.sessionNumber
+                it.sessionNumber == sessionNumber
             }
             for (result in results) {
                 if (result.skipped) continue
@@ -185,21 +148,12 @@ class CycleRepository @Inject constructor(
                 }
             }
 
-            // Last session of the main cycle: generate the deload week from the
-            // final plan state (weights x 0.85, sets halved, no failure).
-            if (sessionWithSets.session.sessionNumber == ProgressionEngine.SESSIONS_PER_CYCLE) {
-                insertPlanSessions(cycleId, engine.generateDeload(evaluation.plan))
+            if (sessionNumber == ProgressionEngine.SESSIONS_PER_CYCLE) {
+                cycleDao.markCompleted(cycleId, now)
             }
         }
     }
 
-    // ------------------------------------------------------------- reset
-
-    /**
-     * "Reset cycle" from Settings: wipes every cycle with its sessions, set logs
-     * and progression state, and marks setup incomplete so the wizard runs again.
-     * The exercise/template catalogue is untouched.
-     */
     suspend fun resetAllProgress() {
         db.withTransaction {
             setLogDao.deleteAll()
@@ -210,9 +164,6 @@ class CycleRepository @Inject constructor(
         settingsRepository.setSetupComplete(false)
     }
 
-    // ------------------------------------------------------------- plan <-> rows
-
-    /** Rebuilds the engine's immutable plan from the persisted session/set rows. */
     private fun reconstructPlan(
         cycleNumber: Int,
         sessions: List<SessionWithSetLogs>,
@@ -220,16 +171,16 @@ class CycleRepository @Inject constructor(
         exercises: Map<String, ExerciseEntity>,
     ): CyclePlan {
         val progressionByExercise = progressions.associateBy { it.exerciseId }
+        val mainSessions = sessions
+            .filter { it.session.sessionNumber <= ProgressionEngine.SESSIONS_PER_CYCLE }
         return CyclePlan(
             cycleNumber = cycleNumber,
-            sessions = sessions.map { sessionWithSets ->
+            sessions = mainSessions.map { sessionWithSets ->
                 val session = sessionWithSets.session
                 SessionPrescription(
                     sessionNumber = session.sessionNumber,
-                    week = session.week,
-                    block = session.block,
+                    phase = session.phase,
                     workout = session.workoutLetter,
-                    isDeload = session.isDeload,
                     exercises = sessionWithSets.setLogs
                         .groupBy { it.exerciseId }
                         .entries
@@ -254,17 +205,14 @@ class CycleRepository @Inject constructor(
         )
     }
 
-    /** Inserts planned sessions and their prescribed PENDING set rows. */
     private suspend fun insertPlanSessions(cycleId: Long, sessions: List<SessionPrescription>) {
         val sessionIds = sessionDao.insertAll(
             sessions.map { session ->
                 WorkoutSessionEntity(
                     cycleId = cycleId,
                     sessionNumber = session.sessionNumber,
-                    week = session.week,
-                    block = session.block,
+                    phase = session.phase,
                     workoutLetter = session.workout,
-                    isDeload = session.isDeload,
                 )
             },
         )
@@ -286,39 +234,6 @@ class CycleRepository @Inject constructor(
             }
         }
         setLogDao.insertAll(logs)
-    }
-
-    /**
-     * Copies the prescriptions of [updatedPlan] for sessions after
-     * [afterSessionNumber] onto the persisted PENDING set rows. Set structure never
-     * changes during rewrites (weights and rep targets only), so rows and
-     * prescriptions match one-to-one.
-     */
-    private suspend fun syncFutureSetLogs(
-        persistedSessions: List<SessionWithSetLogs>,
-        updatedPlan: CyclePlan,
-        afterSessionNumber: Int,
-    ) {
-        val planBySessionNumber = updatedPlan.sessions.associateBy { it.sessionNumber }
-        val updates = ArrayList<SetLogEntity>()
-        for (sessionWithSets in persistedSessions) {
-            val sessionNumber = sessionWithSets.session.sessionNumber
-            if (sessionNumber <= afterSessionNumber) continue
-            val prescription = planBySessionNumber[sessionNumber] ?: continue
-            val prescriptionByExercise = prescription.exercises.associateBy { it.exerciseId }
-            for (log in sessionWithSets.setLogs) {
-                if (log.status != SetStatus.PENDING) continue
-                val set = prescriptionByExercise[log.exerciseId]?.sets?.getOrNull(log.setIndex) ?: continue
-                val updated = log.copy(
-                    kind = set.kind,
-                    prescribedWeightKg = set.weightKg,
-                    prescribedTargetReps = set.targetReps,
-                    prescribedMinReps = set.minReps,
-                )
-                if (updated != log) updates += updated
-            }
-        }
-        if (updates.isNotEmpty()) setLogDao.updateAll(updates)
     }
 
     private fun toExerciseResults(setLogs: List<SetLogEntity>): List<ExerciseResult> =

@@ -11,12 +11,12 @@ import kotlinx.serialization.Serializable
 enum class SessionStatus { PLANNED, IN_PROGRESS, COMPLETED }
 
 /**
- * One workout session of a cycle. Sessions 1-24 form the main 8-week cycle
- * ([isDeload] = false), sessions 25-27 are the deload week (week 9, block 0).
+ * One workout session of a cycle. Sessions 1-24 form the main cycle across 4
+ * phases of 6 workouts each.
  *
  * The whole schedule is materialised up front as PLANNED rows (with their
- * prescribed [SetLogEntity] rows), which is what makes progression deterministic:
- * rewrites caused by misses or isolation bumps only touch future PENDING sets.
+ * prescribed [SetLogEntity] rows). The session number alone determines the workout
+ * rotation and phase — no plan rewriting on failure.
  */
 @Serializable
 @Entity(
@@ -35,10 +35,14 @@ data class WorkoutSessionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val cycleId: Long,
     val sessionNumber: Int,
-    val week: Int,
-    val block: Int,
+    val phase: Int,
+    @Deprecated("Replaced by phase; keep for backward compat")
+    val week: Int = ((sessionNumber - 1) / 3 + 1),
+    @Deprecated("Replaced by phase; keep for backward compat")
+    val block: Int = 0,
+    @Deprecated("No longer used; keep for backward compat")
+    val isDeload: Boolean = false,
     val workoutLetter: WorkoutLetter,
-    val isDeload: Boolean,
     val status: SessionStatus = SessionStatus.PLANNED,
     val startedAtEpochMs: Long? = null,
     val completedAtEpochMs: Long? = null,
